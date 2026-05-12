@@ -1,0 +1,63 @@
+@startuml
+title Spring Calculation Flow
+
+start
+
+:User enters spring data;
+:User enters applied load;
+:User enters preload turns;
+:User enters adjuster pitch;
+
+:MainWindow.calculate();
+
+:Create Spring 1;
+:Create Spring 2;
+:Create Main Spring;
+
+:Convert preload turns to displacement;
+note right
+preload_displacement =
+preload_turns * adjuster_pitch
+end note
+
+:Calculate equivalent spring rate;
+
+:Calculate preload force;
+note right
+preload_force =
+k_eq * preload_displacement
+end note
+
+:Calculate total force;
+note right
+total_force =
+applied_force + preload_force
+end note
+
+repeat
+    :For each spring;
+    :compression = total_force / spring.rate;
+
+    if (spring has max compression?) then (yes)
+        if (compression exceeds max?) then (yes)
+            :clip compression to max_compression;
+            :mark spring as stopped;
+        else (no)
+            :spring is not stopped;
+        endif
+    else (no)
+        :spring has no stop;
+    endif
+
+    :compressed_length = free_length - compression;
+    :add result to spring_results;
+repeat while (more springs?)
+
+:Calculate total compression;
+:Calculate total stack length;
+
+:Display text results;
+:Plot force vs compression curve;
+
+stop
+@enduml
