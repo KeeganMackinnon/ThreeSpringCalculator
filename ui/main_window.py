@@ -1,3 +1,5 @@
+# ui/main_window.py
+
 from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -7,15 +9,22 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QPushButton,
     QTextEdit,
+    QGroupBox,
+    QFormLayout,
+    QLineEdit,
+    QComboBox,
+    QScrollArea,
 )
-from PyQt6.QtGui import QIcon
 
+from PyQt6.QtGui import QIcon
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from plotting import generate_force_curve
-from spring import Spring
-from stack import basic_stack_calculation
+
+from stack import calculate_stack
+from plotting import draw_force_curve
+from configs import ConfigLibrary
+from ui.shock_input_panel import ShockInputPanel
 
 
 class MainWindow(QMainWindow):
@@ -24,206 +33,254 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("ANZE Three Spring Calculator")
         self.setWindowIcon(QIcon("assets/anze.ico"))
-        self.setMinimumSize(1100, 700)
-        
+        self.setMinimumSize(1500, 850)
+
+        self.config_library = ConfigLibrary()
+
         central_widget = QWidget()
         main_layout = QHBoxLayout()
 
-        input_layout = QVBoxLayout()
-        output_layout = QVBoxLayout()
+        left_panel = QWidget()
+        left_panel.setMinimumWidth(390)
+        left_panel.setMaximumWidth(470)
+        left_layout = QVBoxLayout(left_panel)
 
-        self.load_input = QDoubleSpinBox()
-        self.load_input.setRange(0, 5000)
-        self.load_input.setValue(150)
-        self.load_input.setSuffix(" lb")
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
 
-        self.preload_turns_input = QDoubleSpinBox()
-        self.preload_turns_input.setRange(0, 100)
-        self.preload_turns_input.setDecimals(2)
-        self.preload_turns_input.setValue(0)
-        self.preload_turns_input.setSuffix(" turns")
+        # -------------------------
+        # Global inputs
+        # -------------------------
 
-        self.adjuster_pitch_input = QDoubleSpinBox()
-        self.adjuster_pitch_input.setRange(0, 10)
-        self.adjuster_pitch_input.setDecimals(4)
-        self.adjuster_pitch_input.setValue(0.050)
-        self.adjuster_pitch_input.setSuffix(" in/turn")
-        
-        self.k1_input = QDoubleSpinBox()
-        self.k1_input.setRange(1, 5000)
-        self.k1_input.setValue(100)
-        self.k1_input.setSuffix(" lb/in")
+        self.load_input = self.make_spinbox(0, 5000, 150, " lb", 2)
+        self.preload_turns_input = self.make_spinbox(0, 100, 0, " turns", 2)
+        self.adjuster_pitch_input = self.make_spinbox(0, 10, 0.0500, " in/turn", 4)
+        self.measured_collar_length_input = self.make_spinbox(0, 100, 0, " in", 4)
 
-        self.l1_input = QDoubleSpinBox()
-        self.l1_input.setRange(0, 100)
-        self.l1_input.setValue(2.0)
-        self.l1_input.setSuffix(" in")
+        global_group = QGroupBox("Global Inputs")
+        global_form = QFormLayout()
+        global_form.addRow("Applied Load", self.load_input)
+        global_form.addRow("Preload Turns", self.preload_turns_input)
+        global_form.addRow("Adjuster Thread Pitch", self.adjuster_pitch_input)
+        global_form.addRow("Measured Collar Length", self.measured_collar_length_input)
+        global_group.setLayout(global_form)
 
-        self.stop1_input = QDoubleSpinBox()
-        self.stop1_input.setRange(0, 100)
-        self.stop1_input.setValue(0.75)
-        self.stop1_input.setSuffix(" in")
+        # -------------------------
+        # Config controls
+        # -------------------------
 
-        self.k2_input = QDoubleSpinBox()
-        self.k2_input.setRange(1, 5000)
-        self.k2_input.setValue(200)
-        self.k2_input.setSuffix(" lb/in")
+        self.config_name_input = QLineEdit()
+        self.config_name_input.setPlaceholderText("Config name")
 
-        self.l2_input = QDoubleSpinBox()
-        self.l2_input.setRange(0, 100)
-        self.l2_input.setValue(2.5)
-        self.l2_input.setSuffix(" in")
+        self.config_select = QComboBox()
 
-        self.stop2_input = QDoubleSpinBox()
-        self.stop2_input.setRange(0, 100)
-        self.stop2_input.setValue(1.0)
-        self.stop2_input.setSuffix(" in")
+        save_config_button = QPushButton("Save Current Config")
+        save_config_button.clicked.connect(self.save_current_config)
 
-        self.k3_input = QDoubleSpinBox()
-        self.k3_input.setRange(1, 5000)
-        self.k3_input.setValue(400)
-        self.k3_input.setSuffix(" lb/in")
+        load_config_button = QPushButton("Load Selected Config")
+        load_config_button.clicked.connect(self.load_selected_config)
 
-        self.l3_input = QDoubleSpinBox()
-        self.l3_input.setRange(0, 100)
-        self.l3_input.setValue(6.0)
-        self.l3_input.setSuffix(" in")
+        delete_config_button = QPushButton("Delete Selected Config")
+        delete_config_button.clicked.connect(self.delete_selected_config)
 
-        calculate_button = QPushButton("Calculate")
-        calculate_button.clicked.connect(self.calculate)
+        config_group = QGroupBox("Spring Configs")
+        config_form = QFormLayout()
+        config_form.addRow("Name", self.config_name_input)
+        config_form.addRow("Saved Configs", self.config_select)
+        config_form.addRow(save_config_button)
+        config_form.addRow(load_config_button)
+        config_form.addRow(delete_config_button)
+        config_group.setLayout(config_form)
 
-        input_layout.addWidget(QLabel("Applied Load"))
-        input_layout.addWidget(self.load_input)
-
-        input_layout.addWidget(QLabel("Preload Turns"))
-        input_layout.addWidget(self.preload_turns_input)
-
-        input_layout.addWidget(QLabel("Adjuster Thread Pitch"))
-        input_layout.addWidget(self.adjuster_pitch_input)
-
-        input_layout.addWidget(QLabel("Spring 1 Rate"))
-        input_layout.addWidget(self.k1_input)
-        input_layout.addWidget(QLabel("Spring 1 Free Length"))
-        input_layout.addWidget(self.l1_input)
-        input_layout.addWidget(QLabel("Spring 1 Max Compression / Stop"))
-        input_layout.addWidget(self.stop1_input)
-
-        input_layout.addWidget(QLabel("Spring 2 Rate"))
-        input_layout.addWidget(self.k2_input)
-        input_layout.addWidget(QLabel("Spring 2 Free Length"))
-        input_layout.addWidget(self.l2_input)
-        input_layout.addWidget(QLabel("Spring 2 Max Compression / Stop"))
-        input_layout.addWidget(self.stop2_input)
-
-        input_layout.addWidget(QLabel("Main Spring Rate"))
-        input_layout.addWidget(self.k3_input)
-        input_layout.addWidget(QLabel("Main Spring Free Length"))
-        input_layout.addWidget(self.l3_input)
-
-        input_layout.addWidget(calculate_button)
-        input_layout.addStretch()
+        # -------------------------
+        # Results
+        # -------------------------
 
         self.output_box = QTextEdit()
         self.output_box.setReadOnly(True)
 
-        # Matplotlib figure embedded into PyQt
+        results_group = QGroupBox("Results")
+        results_layout = QVBoxLayout()
+        results_layout.addWidget(self.output_box)
+        results_group.setLayout(results_layout)
+
+        calculate_button = QPushButton("Calculate")
+        calculate_button.clicked.connect(self.calculate)
+
+        left_layout.addWidget(global_group)
+        left_layout.addWidget(config_group)
+        left_layout.addWidget(results_group, stretch=1)
+        left_layout.addWidget(calculate_button)
+
+        # -------------------------
+        # Shock input panel
+        # -------------------------
+
+        self.shock_input_panel = ShockInputPanel()
+
+        shock_scroll = QScrollArea()
+        shock_scroll.setWidgetResizable(True)
+        shock_scroll.setWidget(self.shock_input_panel)
+        shock_scroll.setMinimumHeight(430)
+
+        shock_group = QGroupBox("Shock Data Input")
+        shock_group_layout = QVBoxLayout()
+        shock_group_layout.addWidget(shock_scroll)
+        shock_group.setLayout(shock_group_layout)
+
+        # -------------------------
+        # Plot
+        # -------------------------
+
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
 
-        output_layout.addWidget(QLabel("Results"))
-        output_layout.addWidget(self.output_box)
-        output_layout.addWidget(QLabel("Force vs Compression"))
-        output_layout.addWidget(self.canvas)
+        plot_group = QGroupBox("Collar Length vs Force")
+        plot_layout = QVBoxLayout()
+        plot_layout.addWidget(self.canvas)
+        plot_group.setLayout(plot_layout)
 
-        main_layout.addLayout(input_layout, 1)
-        main_layout.addLayout(output_layout, 3)
+        right_layout.addWidget(shock_group, stretch=3)
+        right_layout.addWidget(plot_group, stretch=2)
+
+        main_layout.addWidget(left_panel, 1)
+        main_layout.addWidget(right_panel, 4)
 
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
-        # Draw initial result on startup
         self.calculate()
 
-    def get_springs(self):
-        return [
-            Spring(
-                name="Spring 1",
-                rate=self.k1_input.value(),
-                free_length=self.l1_input.value(),
-                max_compression=self.stop1_input.value(),
-            ),
-            Spring(
-                name="Spring 2",
-                rate=self.k2_input.value(),
-                free_length=self.l2_input.value(),
-                max_compression=self.stop2_input.value(),
-            ),
-            Spring(
-                name="Main Spring",
-                rate=self.k3_input.value(),
-                free_length=self.l3_input.value(),
-                max_compression=None,
-            ),
-        ]
+    def make_spinbox(self, minimum, maximum, value, suffix="", decimals=2):
+        spinbox = QDoubleSpinBox()
+        spinbox.setRange(minimum, maximum)
+        spinbox.setDecimals(decimals)
+        spinbox.setValue(value)
+        spinbox.setSuffix(suffix)
+        spinbox.setMinimumWidth(140)
+        return spinbox
+
+    def get_measured_collar_length(self):
+        measured_length = self.measured_collar_length_input.value()
+
+        if measured_length <= 0:
+            return None
+
+        return measured_length
+
+    def get_stack(self):
+        return self.shock_input_panel.get_stack(
+            measured_collar_length=self.get_measured_collar_length()
+        )
+
+    def set_stack_inputs(self, stack):
+        self.shock_input_panel.set_stack_inputs(stack)
+
+    def refresh_config_dropdown(self):
+        current_name = self.config_select.currentText()
+
+        self.config_select.clear()
+        self.config_select.addItems(self.config_library.names())
+
+        if current_name:
+            index = self.config_select.findText(current_name)
+            if index >= 0:
+                self.config_select.setCurrentIndex(index)
+
+    def save_current_config(self):
+        name = self.config_name_input.text().strip()
+
+        if not name:
+            name = f"Config {len(self.config_library.names()) + 1}"
+
+        stack = self.get_stack()
+        self.config_library.save_config(name, stack)
+
+        self.refresh_config_dropdown()
+
+        index = self.config_select.findText(name)
+        if index >= 0:
+            self.config_select.setCurrentIndex(index)
+
+        self.calculate()
+
+    def load_selected_config(self):
+        name = self.config_select.currentText()
+
+        if not name:
+            return
+
+        stack = self.config_library.load_config(name)
+        self.set_stack_inputs(stack)
+        self.calculate()
+
+    def delete_selected_config(self):
+        name = self.config_select.currentText()
+
+        if not name:
+            return
+
+        self.config_library.delete_config(name)
+        self.refresh_config_dropdown()
+        self.calculate()
 
     def calculate(self):
         load = self.load_input.value()
-        springs = self.get_springs()
-
         preload_turns = self.preload_turns_input.value()
         adjuster_pitch = self.adjuster_pitch_input.value()
 
-        result = basic_stack_calculation(
-            force=load,
-            springs=springs,
+        stack = self.get_stack()
+
+        result = calculate_stack(
+            applied_force=load,
+            stack=stack,
             preload_turns=preload_turns,
-            adjuster_pitch=adjuster_pitch
-)
+            adjuster_pitch=adjuster_pitch,
+        )
 
         text = ""
-        text += f"Applied load: {result['applied_force']:.2f} lb\n"
-        text += f"Preload turns: {result['preload_turns']:.2f}\n"
-        text += f"Adjuster pitch: {result['adjuster_pitch']:.4f} in/turn\n"
-        text += f"Preload displacement: {result['preload_displacement']:.3f} in\n"
-        text += f"Preload force: {result['preload_force']:.2f} lb\n"
-        text += f"Total stack force: {result['total_force']:.2f} lb\n"
-        text += f"Total compression: {result['total_compression']:.3f} in\n"
-        text += f"Total stack length: {result['total_length']:.3f} in\n\n"
+        text += f"Applied load: {result.applied_force:.2f} lb\n"
+        text += f"Preload turns: {result.preload_turns:.2f}\n"
+        text += f"Adjuster pitch: {result.adjuster_pitch:.4f} in/turn\n"
+        text += f"Preload displacement: {result.preload_displacement:.4f} in\n"
+        text += f"Preload force: {result.preload_force:.2f} lb\n"
+        text += f"Total stack force: {result.total_force:.2f} lb\n\n"
 
-        for spring in result["spring_results"]:
-            text += f"{spring['name']}\n"
-            text += f"  Compression: {spring['compression']:.3f} in\n"
-            text += f"  Compressed length: {spring['compressed_length']:.3f} in\n"
-            text += f"  Stopped: {spring['stopped']}\n\n"
+        text += f"Total spring compression: {result.total_spring_compression:.4f} in\n"
+        text += f"Total spring length: {result.total_spring_length:.4f} in\n"
+        text += f"Total coupler length: {result.total_coupler_length:.4f} in\n"
+        text += f"Calculated collar length: {result.calculated_collar_length:.4f} in\n"
+
+        if result.measured_collar_length is not None:
+            text += f"Measured collar length: {result.measured_collar_length:.4f} in\n"
+            text += f"Collar length error: {result.collar_length_error:.4f} in\n"
+        else:
+            text += "Measured collar length: not entered\n"
+
+        text += "\n"
+
+        for spring_result in result.spring_results:
+            text += f"{spring_result.name}\n"
+            text += f"  Rate: {spring_result.rate:.2f} lb/in\n"
+            text += f"  Free length: {spring_result.free_length:.4f} in\n"
+
+            if spring_result.max_compression is not None:
+                text += f"  Calculated max compression: {spring_result.max_compression:.4f} in\n"
+            else:
+                text += "  Calculated max compression: none\n"
+
+            text += f"  Actual compression: {spring_result.compression:.4f} in\n"
+            text += f"  Compressed length: {spring_result.compressed_length:.4f} in\n"
+            text += f"  Stopped: {spring_result.stopped}\n\n"
 
         self.output_box.setText(text)
-        curve = generate_force_curve(
-            springs=springs,
-            max_force=max(load * 1.5, 500),
-            step=max(load * 1.5, 500) / 100,
+
+        draw_force_curve(
+            figure=self.figure,
+            canvas=self.canvas,
+            stack=stack,
+            selected_load=load,
             preload_turns=preload_turns,
-            adjuster_pitch=adjuster_pitch
+            adjuster_pitch=adjuster_pitch,
+            comparison_stacks=self.config_library.all_configs(),
         )
-
-        self.figure.clear()
-        ax = self.figure.add_subplot(111)
-
-        ax.plot(curve["stack_lengths"], curve["forces"], linewidth=2)
-
-        selected_stack_length = result["total_length"]
-
-        ax.scatter([selected_stack_length], [load], s=60)
-        ax.annotate(
-            f"{load:.1f} lb\n{selected_stack_length:.2f} in",
-            xy=(selected_stack_length, load),
-            xytext=(10, 10),
-            textcoords="offset points",
-        )
-
-        ax.set_xlabel("Compressed Stack Length [in]")
-        ax.set_ylabel("Applied Force [lb]")
-        ax.set_title("Spring Stack Length vs Force")
-        ax.grid(True)
-        ax.invert_xaxis()
-
-        self.canvas.draw()
